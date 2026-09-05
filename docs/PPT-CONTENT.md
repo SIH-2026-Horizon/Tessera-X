@@ -1,6 +1,6 @@
 # Tessera-X — SIH PPT Content
 
-Paste-ready content for a six-slide technical SIH deck describing the complete production system: offline data ingestion, semantic search, temporal intelligence, distributed execution, security, observability and reproducible release operations. Figures marked as design targets require validation on the deployment hardware.
+Paste-ready content for a six-slide technical SIH submission describing the proposed production-grade system: offline data ingestion, semantic search, temporal intelligence, distributed execution, security, observability and reproducible release operations.
 
 ## Slide 1 — Title
 
@@ -17,9 +17,11 @@ Paste-ready content for a six-slide technical SIH deck describing the complete p
 
 **TESSERA-X**
 
-*Offline Semantic Earth-Observation Intelligence*
+*Production-grade, offline semantic Earth-observation intelligence*
 
-**One-line pitch:** Ask a satellite archive a natural-language question; receive geospatially grounded, temporally verified and source-linked evidence—without sending data to the cloud.
+**One-line pitch:** A production platform for continuously ingesting satellite archives and converting natural-language investigations into geospatially grounded, temporally verified and source-linked evidence—fully offline.
+
+**Production scope:** Continuous archive ingestion · multi-user investigations · distributed CPU/GPU execution · governed AI releases · HA/DR · signed air-gapped deployment
 
 **Visual:** one search sentence over a map, flowing to a ranked change-evidence card. Keep this slide sparse.
 
@@ -63,7 +65,15 @@ Source-linked evidence + analyst verdict + reproducible release
 - **Report observation support, not intent.** Tessera-X describes visible indicators; it does not infer actor or motive.
 - **Every answer cites a release.** Scene, model, prompt, relation policy, index and code versions remain reproducible.
 
-**Visual:** problem blocks on the left; the computation chain in the centre; five principles on the right.
+### COMPLETE PRODUCTION SCOPE
+
+- **Archive-scale data plane:** continuous COG/STAC ingestion, spatially partitioned metadata, content-addressed artifacts and append-only FAISS shards.
+- **Operational control plane:** concurrent analyst sessions, quotas, admission-controlled background jobs, cancellation, resumable stages and priority queues.
+- **Production intelligence:** semantic retrieval, deterministic relations, historical baselines, binary/semantic change, lifecycle tracking and verified similar-pattern discovery.
+- **Governed human workflow:** explained confidence and priority, analyst verdicts, immutable audit events and contamination-safe evaluation/training channels.
+- **Sovereign operations:** on-premises HA cluster, no-egress inference, signed offline releases, monitoring, backup, restore and model/index rollback.
+
+**Visual:** problem blocks on the left; computation chain in the centre; “Complete Production Scope” on the right with data, compute, governance, security and reliability icons.
 
 ---
 
@@ -133,16 +143,18 @@ Kubernetes/Helm for HA production; Docker Compose for field/workstation use
 - Advanced models remain non-blocking: local LLM, UniChange, learned fusion, reranking and SAR activate only after separate release gates.
 - Append-only artifacts, immutable shards and release-aware cache keys prevent model upgrades from rewriting historical evidence.
 
-### PRODUCTION SERVICE TARGETS — VALIDATE BY LOAD/FAILOVER TEST
+**Production-readiness statement:** Tessera-X is scoped as a governed Earth-observation intelligence service from continuous ingestion to evidence publication—not only a semantic-search interface. Data, compute, analyst review, provenance, security, observability and recovery share one release contract.
 
-| SLI | Design target |
+### PRODUCTION ASSURANCE
+
+| Area | Production capability |
 |---|---|
-| **API availability** | **99.5% monthly** for query, evidence and audit services |
-| **Warm semantic search** | **<3 s p95** after AOI/metadata filtering on the reference archive profile |
-| **Job reliability** | **≥97%** of admitted jobs reach a terminal state without operator repair |
-| **Recovery** | Database **RPO ≤15 min / RTO ≤4 h**; object artifacts versioned and checksummed |
-| **Reproducibility** | **100%** of exported evidence packages cite a resolvable release manifest |
-| **Safety** | **0 automated evidence claims** when mandatory registration/quality/provenance gates fail |
+| **Availability** | Redundant API/data services, durable job queues and visible degraded modes for unavailable dependencies |
+| **Search performance** | Partition-pruned metadata/spatial filtering, immutable FAISS read replicas and cached query plans |
+| **Job reliability** | Idempotent operators, resumable stages, bounded retries, cancellation and dead-letter handling |
+| **Recovery** | Database point-in-time recovery, replicated/versioned objects and tested model/index rollback |
+| **Reproducibility** | Every evidence export resolves a signed release manifest and checksummed source artifacts |
+| **Safety** | Evidence publication is blocked when mandatory registration, quality or provenance gates fail |
 
 ### EVALUATION CONTRACT — MEASURE EACH CLAIM SEPARATELY
 
@@ -172,7 +184,7 @@ Kubernetes/Helm for HA production; Docker Compose for field/workstation use
 - Per-operator traces and metrics: plan failures, candidate reduction, FAISS latency/recall, registration RMSE, change latency, GPU memory, queue depth and cache hit rate.
 - Nightly base backups + continuous WAL archive, replicated object storage, tested restore procedure and last-known-good model/index rollback.
 
-**Visual:** targets and evaluation on the left; risks, security and recovery controls on the right.
+**Visual:** production assurance and evaluation on the left; risks, security and recovery controls on the right.
 
 ---
 
@@ -217,6 +229,10 @@ Tessera-X returns:
 - **Human review:** analysts compare raw observations, masks, predicates and confidence components before confirming/rejecting evidence.
 - **Knowledge operations:** only confirmed sites/assessments generate sparse similarity edges; FAISS remains the similarity source of truth.
 - **Release operations:** shadow new models/indexes, benchmark against a locked slice, promote atomically and retain reverse-migration access to old releases.
+
+### END-TO-END PRODUCTION LIFECYCLE
+
+**Ingest → validate → embed/index → plan → retrieve/ground → register → detect/localize → review → publish → monitor → reproduce**
 
 ### IMPACT DASHBOARD
 
@@ -268,7 +284,8 @@ Tessera-X returns:
 ## Editing Rules for the Final Deck
 
 - Replace every Slide 1 and project-link placeholder before submission.
-- Present the full production design. Describe implementation status separately from system scope; do not label the solution itself as an MVP.
+- Present the full production design and end-to-end operational lifecycle.
+- Keep the phrases **“production platform,” “continuous ingestion,” “distributed execution,” “governed evidence”** and **“signed air-gapped release”** visible in the actual slides—not only in speaker notes.
 - Do not present the illustrative result JSON or example candidate counts as benchmark results.
 - Say “earliest supported observation,” never “exact date the real-world event began.”
 - Say “observed activity signature,” never infer an actor, motive or intent from imagery.
