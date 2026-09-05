@@ -86,6 +86,12 @@ Source-linked evidence + analyst verdict + reproducible release
 3. **Capability validator** rejects unavailable feature layers, sensors or relations instead of approximating them silently.
 4. **Cost gate + DAG compiler** predicts candidate cardinality and routes only the operators needed for the query.
 
+### TYPED QUERY CONTRACT
+
+`GeoQueryPlan` records intent, semantic targets, positive/negative prompts, AOI, temporal interval, spatial relations, sensors, quality filters and compute budget. It also preserves which constraints were explicit, which defaults were applied, which terms were ignored and which capabilities remain unresolved.
+
+The independent checker compares raw-language dates, distances, place names and relations with the compiled plan. A mismatch blocks execution or requests clarification; the planner cannot approve its own interpretation.
+
 ### EXECUTION PLANE
 
 | Stage | Technical path |
@@ -127,6 +133,13 @@ Kubernetes/Helm for HA production; Docker Compose for field/workstation use
 - Seal FAISS shards as immutable; new encoders create a new namespace instead of mutating historical vectors.
 - A release manifest pins code SHA, container digest, model checksums, prompt/lexicon/relation policies, STAC snapshot, feature-layer versions and index shards.
 
+### EVIDENCE AND CONFIDENCE CONTRACT
+
+- `EffectiveConfidence = ModelConfidence × RegistrationQuality × ObservationQuality`; priority remains a separate, explained policy score.
+- Each result links the patch/geometry, spatial predicate, source observations, historical-baseline members, change mask, indicator observations and analyst verdict.
+- Earliest-change output is a defensible observation bracket: **last supported no-change → earliest supported change → next confirming observation**, with unusable scenes listed explicitly.
+- Similar-pattern discovery is two-stage: FAISS retrieves top-K signatures, then a verifier checks indicators, spatial relations, timing, lifecycle compatibility and evidence quality.
+
 **Visual:** make the control/execution architecture dominant. Show separate control, data, CPU and GPU planes.
 
 ---
@@ -166,6 +179,23 @@ Kubernetes/Helm for HA production; Docker Compose for field/workstation use
 | **Planner safety** | Intent accuracy, slot exact match, numeric/constraint preservation and unsupported-capability detection |
 | **System** | P50/P95/P99 latency, embedding throughput, candidate reduction, memory, index size and cache hit rate |
 
+### FALSE-ALARM CONTROL
+
+Cloud, cloud shadow, seasonal vegetation, phenology, parallax, resampling seams, sensor differences and registration error are stored as explicit false-alarm categories. Quality gates can reject the pair before inference, reduce confidence after inference or route the result to mandatory analyst review.
+
+### REQUIREMENT-TO-EVIDENCE TRACEABILITY
+
+| Problem / requirement | System response | Evidence and gate | User-visible outcome |
+|---|---|---|---|
+| Metadata search misses visual meaning | LRSCLIP embeddings + FAISS retrieval | Blinded hard-negative retrieval set; nDCG, precision, MRR and recall | Ranked, geolocated semantic candidates |
+| Similarity cannot prove “near/inside” | Typed relation + versioned PostGIS predicate | Known-answer predicate fixtures and constraint-preservation tests | Named geometry, relation and distance evidence |
+| Cloud, season or misalignment looks like change | Quality-valid baseline + AROSICS + false-alarm policy | Registration/quality gates and category-wise F1/IoU/false alarms | Registered comparison and qualified change mask |
+| Pairwise comparison cannot say when | Multi-observation temporal localizer | Exact/valid-acquisition error and unusable-scene skip accuracy | Last no-change → earliest supported change → confirmation |
+| Language models can alter constraints | Independent checker + capability validator | Numeric/slot preservation and unsafe-plan rejection | Executable plan, defaults and unresolved terms |
+| Results drift after data/model upgrades | Immutable index/artifact namespaces + signed release | Fixed-release replay and rollback tests | Reproducible scene-to-verdict evidence package |
+
+This matrix connects every stated limitation to its deterministic or learned operator, its independent validation measure and the evidence an analyst ultimately receives.
+
 ### RISKS AND MITIGATIONS
 
 | Risk | Mitigation / fallback |
@@ -204,6 +234,8 @@ Tessera-X returns:
 - **last supported no-change**, **earliest supported change** and next confirming observation;
 - lifecycle: `first_seen → expanding → persistent → contracting → no_longer_supported`;
 - release/model/index/data provenance and the analyst’s final verdict.
+
+The explain trace also reports how many candidates survived each stage—metadata, semantic, spatial, temporal and quality—so an analyst can see exactly why a result was included or excluded.
 
 ### WHO BENEFITS
 
@@ -246,16 +278,54 @@ Tessera-X returns:
 
 ### PRIMARY TECHNICAL REFERENCES
 
-1. [Chen et al. — **LRSCLIP: A Vision-Language Foundation Model for Aligning Remote Sensing Image with Longer Text**](https://arxiv.org/abs/2503.19311) (2025).
-2. [Bandara & Patel — **ChangeFormer: A Transformer-Based Siamese Network for Change Detection**](https://arxiv.org/abs/2201.01293), IGARSS 2022.
-3. [**UniChange: Unifying Change Detection with Multimodal Large Language Model**](https://arxiv.org/abs/2511.02607) (2025); retained behind a deployment gate.
-4. [Scheffler et al. — **AROSICS: Automated and Robust Open-Source Image Co-Registration for Multi-Sensor Satellite Data**](https://doi.org/10.3390/RS9070676), Remote Sensing 2017.
-5. [Douze et al. — **The Faiss Library**](https://arxiv.org/abs/2401.08281) (2024) and [Johnson et al. — billion-scale similarity search with GPUs](https://arxiv.org/abs/1702.08734) (2017).
-6. [Open Geospatial Consortium — **STAC 1.1.0** and **STAC API 1.0.0**](https://www.ogc.org/standards/stac/) community standards.
-7. [PostgreSQL/PostGIS documentation](https://postgis.net/docs/) — geography distance, containment, intersection and spatial indexing.
-8. Public/local evaluation packs — LEVIR-CD/DSIFN-style binary-change evaluation plus locally curated hard negatives and temporal labels.
+1. [Chen et al. — **LRSCLIP: Aligning Remote-Sensing Images with Longer Text**](https://arxiv.org/abs/2503.19311), 2025.
+2. [Liu et al. — **RemoteCLIP: A Vision-Language Foundation Model for Remote Sensing**](https://doi.org/10.1109/TGRS.2024.3390838), IEEE TGRS 2024.
+3. [Zhang et al. — **RS5M and GeoRSCLIP**](https://arxiv.org/abs/2306.11300), 2023.
+4. [Bandara & Patel — **ChangeFormer**](https://arxiv.org/abs/2201.01293), IGARSS 2022.
+5. [**UniChange: Unifying Change Detection with Multimodal Large Language Models**](https://arxiv.org/abs/2511.02607), 2025.
+6. [Scheffler et al. — **AROSICS**](https://doi.org/10.3390/RS9070676), Remote Sensing 2017.
+7. [Douze et al. — **The Faiss Library**](https://arxiv.org/abs/2401.08281) and [Johnson et al. — billion-scale GPU similarity search](https://arxiv.org/abs/1702.08734).
+8. [Malkov & Yashunin — **Hierarchical Navigable Small World graphs**](https://arxiv.org/abs/1603.09320), IEEE TPAMI 2020.
+9. [Open Geospatial Consortium — **STAC 1.1.0 / STAC API 1.0.0**](https://www.ogc.org/standards/stac/).
+10. [OGC — **Cloud Optimized GeoTIFF 1.0**](https://www.ogc.org/standards/ogc-cloud-optimized-geotiff/) and [PostGIS spatial operators](https://postgis.net/docs/).
+11. [W3C — **PROV-O Provenance Ontology**](https://www.w3.org/TR/prov-o/) for interoperable evidence lineage.
+12. [Chen & Shi — **LEVIR-CD**](https://justchenhao.github.io/LEVIR/) building-change benchmark, with local hard-negative and temporal evaluation packs.
+13. [Google Earth Engine documentation](https://developers.google.com/earth-engine/guides/getstarted) — cloud-scale geospatial analysis and image collections.
+14. [Copernicus Data Space Browser](https://documentation.dataspace.copernicus.eu/Applications/Browser.html) — catalog search, visualization, comparison and time-series tools.
+15. [Microsoft Planetary Computer STAC API](https://planetarycomputer.microsoft.com/docs/reference/stac/) — cloud-hosted STAC catalog and asset discovery.
 
-### POSITIONING AGAINST COMMON APPROACHES
+### BENCHMARK AND VALIDATION DESIGN
+
+| Benchmark layer | Dataset/protocol | Reported measures | What it proves |
+|---|---|---|---|
+| **Semantic retrieval** | RSITMD/RSICD-style public sets plus a blinded local query–candidate pool with hard negatives | nDCG@5/10, Precision@5/10, MRR, recall and latency | Natural-language relevance beyond metadata search |
+| **Spatial grounding** | Versioned synthetic and real feature layers with known distance/intersection/containment answers | Predicate accuracy, distance error, constraint preservation | “Near/inside/adjacent” is geometrically correct |
+| **Binary change** | LEVIR-CD/DSIFN-style benchmarks plus local cloud, season, shadow and registration negatives | Precision, recall, F1, IoU and false-alarm breakdown | Change masks remain useful outside clean benchmark pairs |
+| **Temporal localization** | Multi-observation AOI timelines with unusable scenes and independently labelled change brackets | Exact acquisition match, valid-acquisition error, temporal error, skip accuracy | Earliest-supported observation is defensible |
+| **Planner safety** | Gold natural-language queries containing dates, quantities, AOIs, negation and unsupported relations | Intent/slot accuracy, numeric preservation, ignored-term recall, unsafe-plan rejection | The language layer preserves analyst constraints |
+| **Activity intelligence** | Curated multi-indicator timelines and verified similar-site pools | Indicator/signature precision–recall, lifecycle agreement, area error, verified-signature nDCG | Correlated activity claims and analogues are evidence-backed |
+| **Production replay** | Fixed release replay plus worker loss, stale cache, missing shard and read-only storage tests | Reproduction success, stage recovery, cache isolation, latency and resource use | Operational reliability and historical reproducibility |
+
+### EXISTING SOLUTIONS AND TESSERA-X ADVANTAGE
+
+| Existing solution/approach | Primary strength | Remaining gap for this workflow | Tessera-X advantage |
+|---|---|---|---|
+| **Copernicus Data Space Browser** | Strong catalog search, visualization, download, comparison and time-series exploration | Primarily interactive product discovery; does not compile free-form investigations into versioned evidence plans | Natural-language plan → deterministic grounding → change/timeline evidence → analyst verdict |
+| **Microsoft Planetary Computer / STAC APIs** | Standards-based discovery and cloud access to large geospatial collections | Catalog/API layer; semantic retrieval, spatial-relation proof and evidence lifecycle must be assembled separately | Adds offline semantic indexing, typed planning, temporal verification and release-linked evidence |
+| **Google Earth Engine** | Large cloud catalog and scalable code-driven geospatial computation | Cloud/service dependency; investigation logic, model lineage and evidence packaging are application responsibilities | Air-gapped execution with governed models, immutable artifacts and a reproducible scene-to-verdict chain |
+| **RemoteCLIP/GeoRSCLIP + FAISS** | Strong open-vocabulary remote-sensing retrieval | Similarity cannot prove exact spatial relations or whether/when change occurred | Uses embeddings only for candidate generation; PostGIS, registration, change models and temporal logic verify the claim |
+| **AROSICS + ChangeFormer pipelines** | Capable registration and binary-change components | Pair selection, language interpretation, lifecycle reasoning, provenance and analyst workflow are outside the models | Integrates them behind quality gates with historical baselines, earliest-support logic and human review |
+| **End-to-end multimodal VLM** | Flexible instruction-driven visual reasoning | May alter constraints or produce ungrounded explanations; difficult to audit and reproduce | LLM output is a checked plan; source observations and deterministic operators remain authoritative |
+
+### WHY TESSERA-X IS STRONGER AS A SYSTEM
+
+- **Semantics plus geometry:** embeddings find visual meaning; PostGIS proves spatial relations using named, versioned features.
+- **Search plus verification:** candidates pass observation-quality, registration, baseline and change gates before becoming evidence.
+- **Time is explicit:** the system reports last no-change, earliest supported change, confirmation and lifecycle—never an unsupported exact event time.
+- **Evidence survives model upgrades:** immutable index namespaces, content hashes and signed release manifests reproduce historical results.
+- **Offline operational ownership:** data, models, indexes, policies, logs and analyst decisions remain inside the deployment boundary.
+
+### CAPABILITY SUMMARY
 
 | Capability | Metadata catalog | CLIP/vector search only | End-to-end VLM | Tessera-X |
 |---|:---:|:---:|:---:|:---:|
@@ -270,20 +340,20 @@ Tessera-X returns:
 | HA, resumable jobs and rollback | Tool-specific | Rarely complete | Model-serving focus | **Production control + worker planes** |
 | Air-gapped signed releases | Possible | Possible | Often difficult | **Designed in** |
 
-### PROJECT RESOURCES
+### TECHNICAL EVIDENCE PACK
 
-- **Production repository:** add URL
-- **Architecture:** add public document URL
-- **Demo video:** add URL
-- **Evaluation report:** add URL after the locked benchmark is run
+- [System architecture](ARCHITECTURE.md) — invariants, typed plans, execution layers, evidence graph and release model.
+- [Production implementation plan](PLAN.md) — workstreams, qualification gates, test matrix and release hardening.
+- [Activity-intelligence decision record](ADR-001-ACTIVITY-INTELLIGENCE.md) — observation, signature, lifecycle and analyst-verdict semantics.
 
-**Visual:** references on the left and comparison table on the right; QR codes only for repository/demo.
+**Visual:** use a two-column reference block across the top; place the benchmark and existing-solution comparisons below it. If space is tight, move the detailed benchmark table to an appendix slide and retain its seven benchmark-layer labels on Slide 6.
 
 ---
 
 ## Editing Rules for the Final Deck
 
-- Replace every Slide 1 and project-link placeholder before submission.
+- Copy the official Problem Statement ID/title, theme and registered team metadata verbatim into Slide 1 before submission; do not infer them from the solution description.
+- The project repository is private. Add its URL or QR to the submitted deck only after public visibility or judge access has been verified; apply the same rule to any demo or evidence URL.
 - Present the full production design and end-to-end operational lifecycle.
 - Keep the phrases **“production platform,” “continuous ingestion,” “distributed execution,” “governed evidence”** and **“signed air-gapped release”** visible in the actual slides—not only in speaker notes.
 - Do not present the illustrative result JSON or example candidate counts as benchmark results.
