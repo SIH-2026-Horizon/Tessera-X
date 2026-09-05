@@ -36,7 +36,7 @@ The core product principle is:
 
 ## 2. Core Capabilities
 
-Tessera-X is designed around six operational capabilities.
+Tessera-X is designed around eight operational capabilities.
 
 ### 2.1 Natural-language satellite retrieval
 
@@ -93,6 +93,8 @@ The evidence record preserves:
 
 After semantic and geospatial filtering, Tessera-X fetches suitable temporal observations and performs change analysis.
 
+The comparison baseline is not assumed to be the immediately preceding image. For monitored areas, Tessera-X can construct a versioned historical baseline from multiple quality-valid, seasonally comparable observations with compatible sensor and resolution characteristics. Every baseline retains its member scenes and construction policy so an analyst can inspect the source evidence.
+
 The executable baseline uses:
 
 ```text
@@ -126,6 +128,14 @@ The timeline logic explicitly skips or downweights observations affected by:
 - invalid pixels
 - unacceptable quality
 
+For confirmed activity, the same timeline also records the observable lifecycle:
+
+```text
+first_seen → expanding → persistent → contracting → no_longer_supported
+```
+
+Lifecycle states describe support in available imagery; they do not assert the exact real-world start or end time of an activity.
+
 ### 2.5 Similar-site discovery
 
 A confirmed site can seed a new search:
@@ -138,7 +148,35 @@ FAISS remains the authoritative similarity engine.
 
 The knowledge layer may materialize a **sparse top-N operational projection** of similarity edges for confirmed sites and actively reviewed entities. It does not attempt an all-pairs graph.
 
-### 2.6 Evidence and provenance
+Confirmed multi-temporal activity signatures can also seed discovery. Signature retrieval combines before/after visual change, indicator composition, temporal progression, and spatial context. FAISS produces candidates; deterministic and model-based indicator checks verify whether each candidate actually matches the requested signature.
+
+### 2.6 Multi-indicator activity signatures
+
+Tessera-X can correlate individually observable indicators such as:
+
+- temporary or newly appearing structures
+- new tracks or access routes
+- ground disturbance
+- vegetation or land clearing
+- infrastructure expansion
+
+Each indicator is stored as a source-linked `IndicatorObservation`. A versioned `ActivitySignature` defines which indicators are required or optional, their permitted spatial separation, their temporal co-occurrence window, and their persistence policy.
+
+The system reports an observed pattern, not an inferred actor or intent.
+
+### 2.7 Explainable prioritization
+
+Eligible locations can be prioritized using an inspectable evidence vector containing:
+
+- proximity evidence
+- change intensity and affected area
+- duration and persistence
+- number and diversity of concurrent indicators
+- observation, registration, and model quality
+
+Hard constraints remain filters. Priority is kept separate from evidence confidence, and every score preserves its component values, weights, policy version, and missing-data penalties.
+
+### 2.8 Evidence and provenance
 
 Every candidate can be traced to:
 
@@ -222,10 +260,14 @@ flowchart TB
 
     FUSE --> PAIRS[Temporal Pair Selection]
     PAIRS --> QA[Quality + Registration Gate]
-    QA --> CHANGE[ChangeFormerV6 / gated UniChange]
-    CHANGE --> TIME[Quality-Aware Temporal Localization]
+    QA --> BASE[Seasonal Multi-Observation Baseline]
+    BASE --> CHANGE[ChangeFormerV6 / gated UniChange]
+    CHANGE --> IND[Indicator Observations]
+    IND --> ACT[Activity Signature Correlation]
+    ACT --> TIME[Lifecycle-Aware Temporal Analysis]
+    TIME --> PRIORITY[Explainable Priority Assessment]
 
-    TIME --> EVIDENCE[Evidence Workspace]
+    PRIORITY --> EVIDENCE[Evidence Workspace]
     EVIDENCE --> VERDICT[Analyst Verdict]
 
     VERDICT --> KG[Knowledge Substrate]
@@ -337,6 +379,22 @@ A reproducible result references:
 - quality-policy version
 - relation-policy version
 - evaluation-pack version
+- baseline-policy version
+- activity-signature definition version
+- lifecycle-policy version
+- priority-policy version
+
+### 5.7 Separate observation, confidence, and priority
+
+Tessera-X keeps three concepts distinct:
+
+```text
+observation = what source imagery supports
+confidence  = how reliable that evidence is
+priority    = how strongly the evidence matches a review policy
+```
+
+A priority score cannot convert weak evidence into a fact, and no activity signature is treated as proof of intent.
 
 ---
 
@@ -643,6 +701,9 @@ Tessera-X returns:
 last_supported_no_change:
 earliest_supported_change:
 next_confirming_observation:
+current_lifecycle_state:
+lifecycle_history:
+area_trajectory:
 unusable_observations:
 confidence:
 ```
@@ -660,6 +721,8 @@ clear
 cloud
 ```
 
+The baseline used for each comparison is a `BaselineSet`, not an anonymous composite. It records the season window, compatible sensor policy, quality thresholds, construction method, and every contributing scene. When activity geometry can be measured, the timeline also tracks area and rate of change across observations.
+
 ---
 
 ## 15. Knowledge Substrate
@@ -673,6 +736,10 @@ Site
 Scene
 Patch
 ChangeEvent
+BaselineSet
+IndicatorObservation
+ActivitySignature
+ActivityAssessment
 Query
 Candidate
 Verdict
@@ -697,6 +764,8 @@ ChangeEvent CHG_00942
 ```
 
 This avoids trying to represent a ternary temporal relationship with one binary edge.
+
+An activity assessment links a site to the exact indicator observations, signature definition, lifecycle state, baseline, and priority policy used to produce it.
 
 ---
 
@@ -728,6 +797,17 @@ release_id:
 
 A model promotion invalidates embedding-derived edges from the old namespace for new operational use.
 
+For signature-level search, a versioned signature vector may combine:
+
+```text
+before/after visual delta embedding
++ indicator-presence vector
++ normalized temporal trajectory
++ spatial-context features
+```
+
+The vector is used only for candidate generation. A signature verifier rechecks required indicators, spatial relationships, timing, quality, and lifecycle compatibility before presenting a match.
+
 ---
 
 ## 17. Provenance
@@ -757,6 +837,26 @@ Example:
   "change_model": {
     "name": "ChangeFormerV6",
     "version": "v1"
+  },
+
+  "baseline": {
+    "baseline_id": "BASE_SITE_0042_V1",
+    "member_scene_ids": ["S2_2022_01_10_T44PLT", "S2_2022_02_19_T44PLT"],
+    "policy_version": "baseline_v1"
+  },
+
+  "activity": {
+    "assessment_id": "ACT_0042_001",
+    "signature_definition_id": "SIG_CLEARING_TRACK_STRUCTURE_V1",
+    "matched_indicator_ids": ["IND_101", "IND_102", "IND_103"],
+    "lifecycle_state": "expanding"
+  },
+
+  "priority": {
+    "score": 0.81,
+    "band": "high",
+    "evidence_confidence": 0.73,
+    "policy_version": "priority_v1"
   },
 
   "spatial_predicates": [
@@ -834,6 +934,18 @@ Metrics:
 - temporal error
 - unusable-observation handling
 
+### Activity-intelligence benchmark
+
+Use curated multi-observation site timelines with independent labels for indicators, signature matches, lifecycle states, affected-area trajectories, reviewer priority under a fixed policy, and similar-signature relevance.
+
+Measure:
+
+- per-indicator precision and recall
+- signature-level precision and recall
+- lifecycle-state agreement and area error
+- priority-ranking quality, independently from confidence calibration
+- verified-signature nDCG@K against image-only retrieval
+
 ---
 
 ## 19. Repository Layout
@@ -843,8 +955,10 @@ Recommended repository structure:
 ```text
 Tessera-X/
 ├── README.md
-├── PLAN.md
-├── ARCHITECTURE.md
+├── docs/
+│   ├── PLAN.md
+│   ├── ARCHITECTURE.md
+│   └── ADR-001-ACTIVITY-INTELLIGENCE.md
 ├── LICENSE
 ├── pyproject.toml
 ├── .env.example
@@ -854,6 +968,9 @@ Tessera-X/
 │   ├── models.yaml
 │   ├── quality.yaml
 │   ├── relation_policy.yaml
+│   ├── baseline_policy.yaml
+│   ├── activity_signatures.yaml
+│   ├── priority_policy.yaml
 │   └── budgets.yaml
 │
 ├── src/
@@ -867,6 +984,10 @@ Tessera-X/
 │       ├── embeddings/
 │       ├── retrieval/
 │       ├── change/
+│       ├── baseline/
+│       ├── indicators/
+│       ├── activity/
+│       ├── priority/
 │       ├── temporal/
 │       ├── evidence/
 │       ├── knowledge/
@@ -881,6 +1002,8 @@ Tessera-X/
 │   ├── retrieval/
 │   ├── change/
 │   ├── temporal/
+│   ├── activity/
+│   ├── signature_similarity/
 │   └── planner/
 │
 ├── manifests/
@@ -954,9 +1077,14 @@ GET  /plan/{plan_id}/explain
 
 POST /search
 POST /similar
+POST /similar/signature
 
 POST /change/analyze
 POST /change/earliest-supported
+
+POST /activity/analyze
+GET  /activity/{assessment_id}/timeline
+GET  /activity/{assessment_id}/explain
 
 POST /verdict
 GET  /evidence/{result_id}
@@ -1179,6 +1307,9 @@ quality-aware confidence
 
 timeline
 earliest supported change
+observable lifecycle and area trajectory
+matched activity indicators
+priority components and confidence
 
         ↓
 
@@ -1210,6 +1341,7 @@ The core architecture does not require:
 - all-pairs similarity graphs
 - full semantic-change-model training
 - hidden LLM reasoning as evidence
+- intent attribution from observed activity patterns
 
 ---
 
@@ -1225,6 +1357,10 @@ Tessera-X explicitly tests and records:
 - planner constraint omission
 - stale caches across releases
 - stale similarity edges after encoder promotion
+- seasonal or sensor-mismatched historical baselines
+- correlated errors across multiple indicator detectors
+- priority scores presented as evidence confidence
+- single-image lookalikes returned as signature matches
 - retrieval bias
 - analyst-feedback bias loops
 - incomplete feature-layer coverage
@@ -1243,6 +1379,16 @@ deterministic spatial grounding
 +
 quality-gated temporal verification
 +
+versioned historical baselines
++
+source-linked multi-indicator correlation
++
+observable lifecycle measurement
++
+explained priority separate from confidence
++
+verified multi-temporal signature discovery
++
 source-linked provenance
 +
 locked evaluation
@@ -1260,8 +1406,9 @@ The goal is to make every component necessary, measurable, and explainable.
 
 See:
 
-- [`PLAN.md`](./PLAN.md) — phased implementation and validation roadmap
-- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — complete system architecture and technical contracts
+- [`docs/PLAN.md`](./docs/PLAN.md) — phased implementation and validation roadmap
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — complete system architecture and technical contracts
+- [`docs/ADR-001-ACTIVITY-INTELLIGENCE.md`](./docs/ADR-001-ACTIVITY-INTELLIGENCE.md) — rationale and trade-offs for the activity-intelligence extension
 
 ---
 

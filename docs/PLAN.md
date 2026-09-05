@@ -54,6 +54,9 @@ reference feature layers
 semantic encoder
 vector-index type
 binary change model
+historical baseline policy
+initial indicator vocabulary
+initial activity-signature definition
 demo queries
 evaluation datasets
 offline target environment
@@ -92,6 +95,8 @@ Do not include in the first acceptance contract:
 - all-pairs graph construction
 - bidirectional analyst vault sync
 - autonomous enforcement decisions
+- intent attribution from observed activity patterns
+- unrestricted indicator vocabularies or archive-wide activity scans
 
 ## Deliverables
 
@@ -585,11 +590,25 @@ Only select temporal pairs that satisfy:
 - required temporal ordering
 - supported sensor policy
 
+## Workstream 4.5 — Multi-observation historical baselines
+
+For each monitored site, select a versioned set of prior observations satisfying:
+
+- quality and registration gates
+- sufficient AOI overlap
+- compatible sensor and resolution policy
+- seasonally comparable acquisition window
+- exclusion of known prior activity when the signature requires a clean baseline
+
+Persist the member scenes, reference scene, selection reasons, policy versions, and any derived robust composite. A composite is a derived analysis aid; its source observations remain visible and authoritative.
+
 ## Deliverables
 
 - quality pipeline
 - registration pipeline
 - pair selector
+- historical-baseline builder
+- baseline membership and provenance records
 - rejection reasons
 - quality-gate tests
 
@@ -601,6 +620,8 @@ Pass when:
 - registration metrics are recorded
 - temporal analysis never runs without pair-quality metadata
 - false edge changes caused by obvious misalignment are reduced in the hard-negative evaluation set
+- every baseline can be reconstructed from its named source observations and policy
+- the immediately preceding image is not silently treated as the historical norm
 
 ---
 
@@ -668,6 +689,21 @@ If needed:
 
 Every parameter is versioned.
 
+## Workstream 5.5 — Indicator-observation contract
+
+Convert accepted change geometry into source-linked `IndicatorObservation` records. The initial supported vocabulary is deliberately narrow:
+
+```text
+temporary_structure
+new_track
+ground_disturbance
+clearing
+infrastructure_change
+unclassified_change
+```
+
+Binary change may emit `unclassified_change`. A typed indicator requires a benchmarked semantic-change adapter or specialist detector. Every observation records its geometry, time, affected area, intensity, confidence, baseline, source scenes, detector version, and quality flags.
+
 ## Deliverables
 
 - change inference service
@@ -675,6 +711,7 @@ Every parameter is versioned.
 - local mask output
 - effective-confidence record
 - change visualization
+- indicator-observation schema and adapters
 
 ## Exit gate G5 — Binary Change Is Measured
 
@@ -685,6 +722,7 @@ Pass when:
 - mask can be overlaid on source imagery
 - confidence includes source-quality information
 - false positives are categorized
+- unsupported indicator types remain unclassified rather than being guessed
 
 ---
 
@@ -715,6 +753,7 @@ Include:
 - land clearing
 - water-extent change
 - land-cover-to-built-up transitions
+- co-occurring clearing, access-track, and structure indicators
 
 ### Hard negatives
 
@@ -724,6 +763,9 @@ Include:
 - cloud shadow
 - registration artifacts
 - true no-change pairs
+- same-season normal variation
+- single-image lookalikes without matching temporal progression
+- several false indicators caused by one shared artifact
 
 ## Workstream 6.3 — Annotation schema
 
@@ -737,6 +779,9 @@ bbox:
 change_present:
 change_types:
 binary_change_mask:
+indicator_types:
+indicator_geometries:
+baseline_member_scenes:
 quality_flags:
 annotator_1:
 annotator_2:
@@ -835,12 +880,28 @@ batch size
 release ID
 ```
 
+## Workstream 6.9 — Activity-intelligence benchmark
+
+Create curated multi-observation site timelines with labels for:
+
+- indicator presence and geometry
+- signature match/non-match
+- first supported observation
+- expansion, persistence, contraction, and disappearance support
+- affected-area trajectory
+- evidence confidence
+- reviewer priority under a fixed policy
+- similar-signature relevance
+
+Measure indicator precision/recall, signature-level precision/recall, lifecycle-state agreement, area error, priority ranking quality, and verified-signature nDCG@K. Report results separately by sensor, season, indicator type, and quality band.
+
 ## Deliverables
 
 - public benchmark scripts
 - local annotation pack
 - retrieval relevance pack
 - planner test pack
+- activity-signature and lifecycle evaluation pack
 - locked evaluation configuration
 - reproducible metric report
 
@@ -853,14 +914,15 @@ Pass when:
 - literature, target, and measured numbers are visibly separated
 - final evaluation data is locked
 - failure categories are reported
+- priority and evidence confidence are evaluated as different outputs
 
 ---
 
-# 9. Phase 7 — Earliest Supported Observation
+# 9. Phase 7 — Temporal Localization and Activity Lifecycles
 
 ## Objective
 
-Determine the earliest usable observation supporting a verified change.
+Determine the earliest usable observation supporting a verified change and track its observable lifecycle across later usable observations.
 
 ## Workstream 7.1 — Timeline construction
 
@@ -884,17 +946,36 @@ Search the usable timeline without assuming every calendar observation is valid.
 
 Where the phenomenon should persist, verify support in a later valid observation.
 
+## Workstream 7.5 — Lifecycle and trajectory construction
+
+For each usable observation, assign one of:
+
+```text
+not_supported
+first_seen
+expanding
+persistent
+contracting
+no_longer_supported
+indeterminate
+```
+
+Track affected area, area delta, indicator count, indicator diversity, duration, and evidence confidence. State transitions must account for temporal gaps and unusable observations. `No_longer_supported` is an imagery claim, not an exact real-world end date.
+
 ## Output
 
 ```yaml
 last_supported_no_change:
 earliest_supported_change:
 next_confirming_observation:
+current_lifecycle_state:
+lifecycle_history:
+area_trajectory:
 unusable_observations:
 confidence:
 ```
 
-## Workstream 7.5 — Timeline benchmark
+## Workstream 7.6 — Timeline and lifecycle benchmark
 
 Create curated AOI timelines with reviewer labels.
 
@@ -904,13 +985,17 @@ Measure:
 - valid-acquisition error
 - temporal error
 - correct skipping of unusable scenes
+- lifecycle-state agreement
+- affected-area error
+- expansion/contraction direction accuracy
 
 ## Deliverables
 
 - timeline service
 - earliest-supported API
 - timeline UI
-- temporal benchmark
+- lifecycle and trajectory service
+- temporal and lifecycle benchmark
 
 ## Exit gate G7 — Timeline Claim Is Defensible
 
@@ -920,6 +1005,7 @@ Pass when:
 - source scenes are visible
 - reviewers can reproduce the result from the timeline
 - the output wording says “earliest supported observation,” not “exact event date”
+- lifecycle states can be traced to usable source observations and measured geometry
 
 ---
 
@@ -943,6 +1029,10 @@ Show:
 - candidate geometry
 - spatial relation evidence
 - timeline
+- historical baseline and member scenes
+- indicator observations and correlation trace
+- lifecycle and area trajectory
+- priority components and evidence confidence shown separately
 - model/release versions
 
 ## Workstream 8.2 — Analyst verdicts
@@ -978,6 +1068,8 @@ A release ties together:
 - feature-layer versions
 - prompt/lexicon versions
 - relation policy
+- baseline, indicator, activity-signature, lifecycle, and priority policies
+- signature embedding namespace and verifier version
 - evaluation pack
 - benchmark report
 
@@ -991,6 +1083,21 @@ python -m tessera_x.repro run \
   --result CHG_...
 ```
 
+## Workstream 8.5 — Explainable priority policy
+
+After hard filters pass, calculate a review priority from versioned, visible components:
+
+```text
+proximity relevance
+change intensity and affected area
+persistence and duration
+indicator count and diversity
+lifecycle state
+evidence confidence
+```
+
+Persist the raw component values, normalization, weights, missing-data penalties, policy version, and explanation. Keep `priority_score` and `evidence_confidence` as separate fields throughout storage, APIs, exports, and UI.
+
 ## Deliverables
 
 - evidence workspace
@@ -998,6 +1105,7 @@ python -m tessera_x.repro run \
 - release manifest
 - provenance export
 - reproduction command
+- priority-policy registry and explanation view
 
 ## Exit gate G8 — Evidence Is Reproducible
 
@@ -1007,6 +1115,8 @@ Pass when:
 - every default and model version is recorded
 - a release manifest identifies all major dependencies
 - historical evidence is not silently recomputed under a new model version
+- an analyst can explain why one eligible site ranks above another
+- changing a priority policy does not rewrite historical assessments
 
 ---
 
@@ -1040,7 +1150,21 @@ ChangeEvent
 
 Do not encode the temporal event as an ambiguous `Site → Scene, Scene` edge.
 
-## Workstream 9.3 — Verdict graph
+## Workstream 9.3 — Activity-intelligence entities
+
+Persist explicit entities and evidence paths for:
+
+```text
+BaselineSet
+IndicatorObservation
+ActivitySignature
+ActivityAssessment
+ActivityLifecycleObservation
+```
+
+An assessment links to its site, signature-definition version, matched indicator observations, baseline, lifecycle history, priority policy, evidence confidence, and release. Store observations rather than inferred actor or intent.
+
+## Workstream 9.4 — Verdict graph
 
 Persist:
 
@@ -1051,7 +1175,7 @@ Candidate → Site/Patch
 Report → ChangeEvent
 ```
 
-## Workstream 9.4 — Sparse similarity edges
+## Workstream 9.5 — Sparse similarity edges
 
 Rules:
 
@@ -1061,7 +1185,7 @@ Rules:
 - store encoder version and namespace
 - invalidate on model promotion
 
-## Workstream 9.5 — Ground-truth export
+## Workstream 9.6 — Ground-truth export
 
 Analyst verdicts can be exported into a training/review pack.
 
@@ -1074,6 +1198,7 @@ Keep the locked evaluation set independent to avoid feedback leakage.
 - graph evidence paths
 - verdict export
 - sparse similarity projection
+- activity entity schema and evidence paths
 
 ## Exit gate G9 — Knowledge Layer Adds Operational Value
 
@@ -1242,31 +1367,62 @@ Pass when the system can defend the semantic transition labels with ground truth
 
 ---
 
-# 14. Phase 12 — Similar-Site Intelligence and Feedback Reranking
+# 14. Phase 12 — Activity Signatures, Similar-Pattern Intelligence, and Feedback Reranking
 
 ## Objective
 
-Use verified analyst knowledge to improve discovery without contaminating evaluation.
+Correlate source-linked indicators into versioned activity signatures and use verified analyst knowledge to find comparable multi-temporal patterns without contaminating evaluation.
 
 ## Workstream 12.1 — Image-to-image retrieval
 
 Select a known site or patch and query FAISS.
 
-## Workstream 12.2 — Sparse graph expansion
+## Workstream 12.2 — Multi-indicator signature correlation
+
+Define a small versioned signature vocabulary. Each signature specifies:
+
+```text
+required and optional indicators
+maximum spatial separation
+co-occurrence window
+persistence policy
+minimum evidence confidence
+```
+
+Group indicator observations by site, time, and geometry. Required indicators are eligibility rules; optional indicators may strengthen evidence but cannot replace missing requirements. Track shared model and preprocessing lineage so correlated errors are not treated as independent confirmation.
+
+## Workstream 12.3 — Multi-temporal signature representation
+
+Create a dedicated, versioned signature namespace combining:
+
+```text
+before/after visual delta embedding
+indicator-presence vector
+normalized temporal trajectory
+spatial-context features
+```
+
+The initial implementation may concatenate normalized components and benchmark their contribution before introducing learned fusion.
+
+## Workstream 12.4 — Two-stage similar-pattern retrieval
+
+Use FAISS for coarse top-K signature retrieval. Then verify required indicators, spatial relationships, temporal compatibility, baseline validity, lifecycle compatibility, and evidence quality. A single visually similar image is not a verified signature match.
+
+## Workstream 12.5 — Sparse graph expansion
 
 Materialize only operational top-N neighbors.
 
-## Workstream 12.3 — Analyst feedback
+## Workstream 12.6 — Analyst feedback
 
 Create training data from non-evaluation verdicts.
 
-## Workstream 12.4 — Lightweight reranker
+## Workstream 12.7 — Lightweight reranker
 
 Train only a post-embedding relevance layer.
 
 Do not fine-tune the frozen encoder during normal ingestion.
 
-## Workstream 12.5 — Bias controls
+## Workstream 12.8 — Bias controls
 
 Maintain:
 
@@ -1279,6 +1435,10 @@ Maintain:
 ## Deliverables
 
 - similar-site API
+- activity-analysis and explanation APIs
+- signature-definition registry and correlator
+- signature index and `POST /similar/signature`
+- second-stage signature verifier
 - similarity evidence view
 - reranker training pipeline
 - feedback isolation policy
@@ -1290,6 +1450,9 @@ Pass when:
 - holdout performance improves or stays stable
 - feedback data never leaks into the locked test slice
 - results still cite the original frozen embedding namespace
+- signature matches outperform image-only retrieval on the locked multi-temporal holdout
+- every verified match exposes its required indicators and lifecycle evidence
+- shared detector failures are not counted as independent corroboration
 
 ---
 
@@ -1469,6 +1632,11 @@ Test:
 - missing model
 - index shard unavailable
 - planner failure
+- no seasonally compatible baseline
+- activity signature missing a required indicator
+- correlated false indicators from one artifact
+- signature lookalike with incompatible timeline
+- priority policy missing or version mismatch
 
 ## Workstream 15.4 — Security controls
 
@@ -1544,11 +1712,15 @@ SPATIAL GROUNDING
     ↓
 QUALITY GATE
     ↓
+HISTORICAL BASELINE
+    ↓
 BINARY CHANGE
     ↓
 GROUND TRUTH
     ↓
 TEMPORAL LOCALIZATION
+    ↓
+LIFECYCLE MEASUREMENT
     ↓
 PROVENANCE
 ```
@@ -1558,6 +1730,9 @@ Then add:
 ```text
 LLM planner
 semantic change
+multi-indicator correlation
+explainable prioritization
+multi-temporal signature discovery
 knowledge-driven discovery
 reranking
 migration automation

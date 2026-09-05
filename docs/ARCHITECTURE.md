@@ -87,6 +87,16 @@ Feedback and evaluation are separate data channels.
 
 Advanced models sit behind gates and preserve a stable baseline.
 
+## A11 — Activity claims remain observational
+
+The system may report correlated, source-supported indicators. It does not infer an actor, motive, or intent from imagery alone.
+
+## A12 — Confidence and priority are independent
+
+Evidence confidence estimates reliability. Priority estimates policy relevance. Neither value may silently substitute for the other.
+
+The governing trade-offs are recorded in [ADR-001: Evidence-First Activity Intelligence](ADR-001-ACTIVITY-INTELLIGENCE.md).
+
 ---
 
 # 3. High-Level Architecture
@@ -118,9 +128,14 @@ subgraph EXEC["Execution Plane"]
     PAIR[Temporal Pair Selector]
     REG[AROSICS Registration]
     QA[Quality Gate]
+    BASE[Historical Baseline Builder]
     CF[ChangeFormerV6]
     UNI[Optional UniChange]
+    IND[Indicator Extractors]
+    CORR[Activity Signature Correlator]
     TEMP[Temporal Localizer]
+    LIFE[Lifecycle Analyzer]
+    PRIORITY[Explainable Priority Engine]
 end
 
 subgraph EVID["Evidence Plane"]
@@ -162,13 +177,18 @@ FUSE --> PAIR
 PAIR --> REG
 REG --> QA
 
-QA --> CF
-QA -. semantic mode .-> UNI
+QA --> BASE
+BASE --> CF
+BASE -. semantic mode .-> UNI
 
-CF --> TEMP
-UNI --> TEMP
+CF --> IND
+UNI --> IND
+IND --> CORR
+CORR --> TEMP
+TEMP --> LIFE
+LIFE --> PRIORITY
 
-TEMP --> PROV
+PRIORITY --> PROV
 PROV --> WORKSPACE
 WORKSPACE --> VERDICT
 
@@ -193,7 +213,7 @@ Tessera-X is divided into eight logical layers.
 | Layer 2 | Geospatial data and metadata |
 | Layer 3 | Semantic retrieval |
 | Layer 4 | Temporal quality and registration |
-| Layer 5 | Change intelligence |
+| Layer 5 | Change and activity intelligence |
 | Layer 6 | Evidence and analyst workflow |
 | Layer 7 | Knowledge, provenance, and versioning |
 
@@ -241,6 +261,7 @@ class GeoQueryPlan:
     spatial: SpatialSpec
     temporal: TemporalSpec
     filters: FilterSpec
+    activity: ActivitySpec | None
 
     budget: BudgetSpec
 
@@ -255,6 +276,8 @@ class GeoQueryPlan:
     relation_policy_version: str
     release_id: str
 ```
+
+`ActivitySpec` names a versioned activity-signature definition and any analyst-approved overrides. It never allows a planner to invent missing indicators, relax a required spatial relation, or reinterpret an observational pattern as intent.
 
 ## 5.3 Planner tiers
 
@@ -557,8 +580,14 @@ Recommended operators:
 | `pair_select` | candidate + timeline | T1/T2 pairs |
 | `register_pair` | T1/T2 | registered pair + QA |
 | `quality_gate` | pair + masks | accepted pair |
+| `build_baseline` | valid historical observations + policy | versioned baseline set |
 | `change_infer` | pair | change result |
+| `extract_indicators` | change results + observations | indicator observations |
+| `correlate_signature` | indicators + signature definition | activity assessment |
 | `temporal_localize` | candidate timeline | earliest support |
+| `classify_lifecycle` | assessment timeline | lifecycle history |
+| `priority_assess` | evidence vector + policy | explained priority |
+| `signature_topk` | confirmed assessment | ranked signature candidates |
 | `fuse_rank` | ranked evidence | candidate ranking |
 | `explain` | run graph | human trace |
 
@@ -601,8 +630,14 @@ spatially valid
 pair candidates
  ↓ quality + registration
 valid pairs
- ↓ change inference
-evidence
+ ↓ historical baseline construction
+baseline-valid candidates
+ ↓ change and indicator inference
+indicator observations
+ ↓ signature correlation + lifecycle
+activity assessments
+ ↓ explainable priority
+review queue
 ```
 
 ## 12.3 Budget fields
@@ -611,6 +646,9 @@ evidence
 max_candidates:
 max_change_pairs:
 max_registration_pairs:
+max_baseline_members:
+max_indicator_inferences:
+max_signature_candidates:
 preview_limit:
 ```
 
@@ -1002,10 +1040,16 @@ hard filters:
 ranking signals:
     semantic similarity
     quality score
+    change intensity
+    persistence
+    indicator diversity
+    policy-defined proximity contribution
     optional reranker score
 ```
 
 Hard constraints are not converted into soft similarity bonuses.
+
+The system stores the evidence vector before computing a priority. Every priority result records component values, normalization, weights, missing-data penalties, policy version, and the difference between `priority_score` and `evidence_confidence`.
 
 ---
 
@@ -1293,6 +1337,144 @@ Incorrect:
 
 The latter exceeds what the imagery proves.
 
+## 28.4 Historical baseline construction
+
+A baseline is selected from multiple prior observations rather than defaulting to the immediately preceding scene.
+
+Eligibility is deterministic and versioned:
+
+```text
+candidate predates analysis observation
+AOI overlap is sufficient
+quality gate passes
+registration is valid
+sensor/resolution policy is compatible
+seasonal window is compatible
+known prior activity is excluded when required
+```
+
+Conceptual record:
+
+```yaml
+baseline_id:
+site_id:
+member_scene_ids:
+reference_scene_id:
+season_window:
+sensor_policy_version:
+quality_policy_version:
+construction_method:
+composite_artifact_uri:
+release_id:
+```
+
+A median or robust composite may support anomaly measurement, but it is a derived artifact. The contributing source observations remain authoritative and visible.
+
+## 28.5 Indicator observations
+
+Each detector produces a typed, independently traceable observation:
+
+```yaml
+indicator_observation_id:
+indicator_type: temporary_structure | new_track | ground_disturbance | clearing | infrastructure_change
+site_id:
+observation_time:
+geom:
+area_m2:
+change_intensity:
+model_confidence:
+effective_confidence:
+source_scene_ids:
+baseline_id:
+detector_name:
+detector_version:
+quality_flags:
+release_id:
+```
+
+Binary change supplies candidate geometry. Semantic change or gated specialist detectors assign indicator types. Unsupported types remain `unclassified_change` rather than being guessed.
+
+## 28.6 Activity-signature correlation
+
+An `ActivitySignature` is a versioned rule and model contract:
+
+```yaml
+signature_definition_id:
+name:
+required_indicators:
+optional_indicators:
+max_spatial_separation_m:
+cooccurrence_window_days:
+persistence_policy:
+minimum_evidence_confidence:
+correlation_policy_version:
+```
+
+The correlator groups indicator observations by site, time window, and spatial relationship. Required conditions are hard eligibility rules; optional indicators contribute evidence without compensating for a missing requirement.
+
+Correlated detector failures are explicitly tracked. Multiple outputs derived from the same scenes, model family, or preprocessing chain are not counted as fully independent evidence.
+
+## 28.7 Activity lifecycle
+
+For each quality-valid observation, the lifecycle analyzer records one of:
+
+```text
+not_supported
+first_seen
+expanding
+persistent
+contracting
+no_longer_supported
+indeterminate
+```
+
+Transitions use observable geometry, indicator continuity, and quality-aware temporal gaps. Measurements may include affected area, area delta, expansion rate, indicator count, and duration. `No_longer_supported` means the pattern is absent in later usable imagery; it does not prove the real-world activity ended on that date.
+
+## 28.8 Explainable priority assessment
+
+Priority operates only after hard eligibility and quality checks.
+
+Initial evidence vector:
+
+```text
+proximity relevance
+change intensity
+affected area
+persistence/duration
+indicator count
+indicator diversity
+lifecycle state
+evidence confidence
+```
+
+A versioned policy normalizes and weights these values. The output is not just a scalar:
+
+```yaml
+priority_score:
+priority_band:
+evidence_confidence:
+components:
+weights:
+missing_data_penalties:
+policy_version:
+explanation:
+```
+
+Priority answers “what should be reviewed first under this policy?” Confidence answers “how reliable is the supporting evidence?” The UI and API never merge the two.
+
+## 28.9 Multi-temporal signature discovery
+
+A confirmed activity assessment can seed similarity retrieval using a versioned representation of:
+
+```text
+before/after visual delta
+indicator-presence vector
+normalized temporal trajectory
+spatial-context features
+```
+
+FAISS performs coarse top-K retrieval in a dedicated signature namespace. A second-stage verifier then checks required indicators, spatial relationships, temporal compatibility, baseline validity, and evidence quality. Single-image visual resemblance alone is insufficient for a verified signature match.
+
 ---
 
 # 29. Layer 6 — Evidence Fusion
@@ -1309,6 +1491,11 @@ registration
 quality
 change mask
 timeline
+historical baseline and member scenes
+indicator observations
+activity-signature definition and correlation trace
+lifecycle history and area trajectory
+priority components and evidence confidence
 release information
 ```
 
@@ -1322,6 +1509,8 @@ Never use it to override:
 - failed required relation
 - failed quality gate
 - missing source scene
+- missing required activity indicator
+- invalid historical baseline
 
 ---
 
@@ -1347,7 +1536,10 @@ Required views:
 ### Evidence
 
 - T1/T2 imagery
+- historical baseline members and policy
 - change mask
+- typed indicator observations
+- activity-signature match explanation
 - spatial relation geometry
 - quality
 - registration
@@ -1357,6 +1549,16 @@ Required views:
 - all candidate observations
 - usability
 - earliest support
+- lifecycle states
+- area and indicator trajectories
+
+### Priority
+
+- priority band and score
+- evidence confidence shown separately
+- component values and weights
+- missing-data penalties
+- policy version
 
 ### Verdict
 
@@ -1389,6 +1591,10 @@ AOI
 Scene
 Patch
 ChangeEvent
+BaselineSet
+IndicatorObservation
+ActivitySignature
+ActivityAssessment
 Query
 Candidate
 Verdict
@@ -1413,8 +1619,15 @@ ChangeEvent --baseline-------> Scene
 ChangeEvent --comparison-----> Scene
 ChangeEvent --classified_as--> Concept
 ChangeEvent --derived_from---> Release
+BaselineSet --contains-------> Scene
+IndicatorObservation --at_site--> Site
+IndicatorObservation --uses_baseline--> BaselineSet
+ActivityAssessment --matches--> ActivitySignature
+ActivityAssessment --supported_by--> IndicatorObservation
+ActivityAssessment --at_site--> Site
 Site        --located_near---> Feature
 Report      --cites----------> ChangeEvent
+Report      --cites----------> ActivityAssessment
 ```
 
 This models change events explicitly.
@@ -1497,6 +1710,10 @@ When the encoder namespace changes:
 old similarity edges remain historical
 new operational projection is recomputed
 ```
+
+## 33.4 Signature similarity namespace
+
+Image and activity-signature vectors use separate namespaces. Signature-vector metadata records the visual-delta encoder, indicator schema, trajectory normalization, context-feature policy, and release. Top-N retrieval is followed by signature verification; sparse graph edges are materialized only for analyst-confirmed assessments and reference exemplars.
 
 ---
 
@@ -1625,6 +1842,100 @@ temporal_results(
     skipped_scenes              jsonb,
     confidence                  double precision,
     algorithm_version           text,
+    release_id                  text
+);
+```
+
+## 38.1 Historical Baselines
+
+```sql
+baseline_sets(
+    baseline_id                 text primary key,
+    site_id                     text,
+    reference_scene_id          text,
+    season_window               jsonb,
+    construction_method         text,
+    composite_artifact_uri      text,
+    sensor_policy_version       text,
+    quality_policy_version      text,
+    release_id                  text,
+    created_at                  timestamptz
+);
+
+baseline_members(
+    baseline_id                 text references baseline_sets(baseline_id),
+    scene_id                    text,
+    acquisition_time            timestamptz,
+    quality_score               double precision,
+    inclusion_reason            text,
+    primary key (baseline_id, scene_id)
+);
+```
+
+## 38.2 Indicator Observations
+
+```sql
+indicator_observations(
+    indicator_observation_id    text primary key,
+    site_id                     text,
+    indicator_type              text,
+    observation_time            timestamptz,
+    geom                        geometry(Geometry, 4326),
+    area_m2                     double precision,
+    change_intensity            double precision,
+    model_confidence            double precision,
+    effective_confidence        double precision,
+    source_scene_ids            jsonb,
+    baseline_id                 text references baseline_sets(baseline_id),
+    detector_name               text,
+    detector_version            text,
+    quality_flags               jsonb,
+    release_id                  text,
+    created_at                  timestamptz
+);
+```
+
+## 38.3 Activity Definitions and Assessments
+
+```sql
+activity_signatures(
+    signature_definition_id     text primary key,
+    name                        text,
+    definition                  jsonb,
+    correlation_policy_version  text,
+    release_id                  text,
+    created_at                  timestamptz
+);
+
+activity_assessments(
+    assessment_id               text primary key,
+    site_id                     text,
+    signature_definition_id     text references activity_signatures(signature_definition_id),
+    matched_indicator_ids       jsonb,
+    lifecycle_state             text,
+    priority_score              double precision,
+    priority_band               text,
+    evidence_confidence         double precision,
+    priority_components         jsonb,
+    priority_policy_version     text,
+    explanation                 jsonb,
+    signature_namespace         text,
+    release_id                  text,
+    created_at                  timestamptz
+);
+
+activity_lifecycle_observations(
+    lifecycle_observation_id    text primary key,
+    assessment_id               text references activity_assessments(assessment_id),
+    scene_id                    text,
+    observation_time            timestamptz,
+    state                       text,
+    area_m2                     double precision,
+    area_delta_m2               double precision,
+    indicator_count             integer,
+    evidence_confidence         double precision,
+    usability                   text,
+    reason                      jsonb,
     release_id                  text
 );
 ```
@@ -1841,6 +2152,7 @@ Example:
   ],
 
   "embedding_namespace": "ns_lrsclip_v1_768",
+  "signature_namespace": "ns_activity_sig_v1",
 
   "index_shards": [
     {
@@ -1856,6 +2168,11 @@ Example:
   "prompt_version": "v3",
   "relation_policy_version": "rel_v1",
   "quality_policy_version": "qa_v1",
+  "baseline_policy_version": "baseline_v1",
+  "indicator_schema_version": "indicator_v1",
+  "activity_signature_bundle_version": "activity_v1",
+  "lifecycle_policy_version": "lifecycle_v1",
+  "priority_policy_version": "priority_v1",
   "label_pack_version": "lp_v1",
   "eval_report_sha256": "sha256:..."
 }
@@ -2059,7 +2376,20 @@ POST /change/earliest-supported
 
 ```http
 POST /similar
+POST /similar/signature
 ```
+
+`POST /similar/signature` accepts a confirmed assessment or curated reference signature, returns coarse FAISS candidates, and exposes second-stage verification status for each result.
+
+## Activity
+
+```http
+POST /activity/analyze
+GET /activity/{assessment_id}/timeline
+GET /activity/{assessment_id}/explain
+```
+
+The explanation response separates matched and missing indicators, correlation rules, baseline provenance, lifecycle measurements, `priority_score`, and `evidence_confidence`.
 
 ## Verdict
 
@@ -2266,6 +2596,9 @@ Mitigation:
 Mitigation:
 
 - quality masks
+- seasonally comparable multi-observation baselines
+- compatible sensor/resolution policy
+- inspectable baseline membership
 - hard-negative evaluation
 - quality gate
 - effective confidence
@@ -2302,6 +2635,45 @@ Mitigation:
 - encoder version on each edge
 - recompute on namespace promotion
 - FAISS remains authoritative
+
+## 58.1 Failure Mode — Single-Image Signature Lookalikes
+
+Risk:
+
+```text
+one visually similar patch is presented as a matching multi-temporal activity pattern
+```
+
+Mitigation:
+
+- dedicated signature namespace
+- multi-temporal representation
+- second-stage indicator and lifecycle verification
+- minimum evidence-quality gate
+
+## 58.2 Failure Mode — Correlated Indicator Errors
+
+Risk:
+
+```text
+several indicators derived from the same artifact are counted as independent support
+```
+
+Mitigation:
+
+- record shared scenes, preprocessing, and model lineage
+- dependency-aware evidence fusion
+- correlated-error hard negatives
+- analyst-visible evidence paths
+
+## 58.3 Failure Mode — Priority Presented as Confidence
+
+Mitigation:
+
+- separate database and API fields
+- separate UI labels and scales
+- component-level priority explanation
+- calibration only against the appropriate target for each value
 
 ---
 
@@ -2424,6 +2796,10 @@ retrieval
 registration
 quality
 change
+baseline
+indicators
+activity
+priority
 temporal
 evidence
 knowledge
@@ -2520,7 +2896,9 @@ Procedure:
 - independent constraint checker
 - quality/registration
 - binary change detection
+- versioned multi-observation historical baseline
 - earliest-supported observation
+- basic lifecycle states for verified change
 - provenance
 - ground-truth evaluation
 
@@ -2528,6 +2906,9 @@ Procedure:
 
 - local LLM planner
 - UniChange semantic detection
+- typed multi-indicator correlation
+- explainable activity prioritization
+- multi-temporal signature retrieval and verification
 - sparse knowledge-driven similarity
 - feedback reranker
 - embedding migration automation
@@ -2540,6 +2921,7 @@ Procedure:
 - unversioned external feature services
 - silent model upgrades
 - arbitrary archive-wide change inference
+- intent attribution from observed activity signatures
 
 ---
 
@@ -2585,7 +2967,16 @@ STAC/PostGIS    LRSCLIP/FAISS    Feature Layers
           │               │
           └───────┬───────┘
                   ▼
-       TEMPORAL LOCALIZATION
+       INDICATOR OBSERVATIONS
+                  │
+                  ▼
+      ACTIVITY SIGNATURE CORRELATION
+                  │
+                  ▼
+       LIFECYCLE + TEMPORAL LOCALIZATION
+                  │
+                  ▼
+       EXPLAINABLE PRIORITY ASSESSMENT
                   │
                   ▼
        EVIDENCE + PROVENANCE
@@ -2619,6 +3010,18 @@ over making UniChange a blocking dependency
 explicit ChangeEvent nodes
 over ambiguous temporal graph edges
 
+versioned multi-observation baselines
+over assuming the previous image is representative
+
+typed source-linked indicators
+over opaque activity labels
+
+separate confidence and priority
+over one unexplained operational score
+
+verified multi-temporal signatures
+over single-image visual lookalikes
+
 sparse similarity projections
 over dense all-pairs graphs
 
@@ -2640,6 +3043,6 @@ These choices are what make the design operationally defensible.
 
 Tessera-X should be able to make this statement truthfully:
 
-> An analyst can ask a satellite question in natural language. Tessera-X converts the request into an inspectable geospatial plan, independently checks the constraints, retrieves relevant regions, verifies required spatial relations using versioned geometry, runs temporal change analysis only on quality-valid candidates, identifies the earliest supported observation, and returns source-linked evidence tied to a reproducible offline release.
+> An analyst can ask a satellite question in natural language. Tessera-X converts the request into an inspectable geospatial plan, independently checks the constraints, retrieves relevant regions, verifies required spatial relations using versioned geometry, compares quality-valid observations with an inspectable historical baseline, correlates source-linked change indicators into versioned activity signatures, tracks their observable lifecycle, prioritizes review with an explained policy, finds verified multi-temporal analogues, and returns evidence tied to a reproducible offline release.
 
 That is the architecture.
