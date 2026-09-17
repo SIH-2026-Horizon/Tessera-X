@@ -1,0 +1,8 @@
+models:
+  LRSCLIP:
+    frozen: true
+
+  ChangeFormerV6: {}
+
+  UniChange:
+    gated: true

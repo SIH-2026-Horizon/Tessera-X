@@ -1,0 +1,17 @@
+- policy_id: REL_NEAR_RIVER_V1
+  relation: near
+  feature_class: waterway_river
+  default_distance_m: 300
+  min_distance_m: 0
+  max_distance_m: 1000
+  version: 1
+  active: true
+
+- policy_id: REL_NEAR_ROAD_V1
+  relation: near
+  feature_class: road_major
+  default_distance_m: 150
+  min_distance_m: 0
+  max_distance_m: 1000
+  version: 1
+  active: true

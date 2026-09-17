@@ -1,0 +1,8 @@
+database:
+  db_url_env_var: TESSERA_X_DB_URL
+
+embeddings:
+  default_namespace: ns_lrsclip_v1_768
+
+relations:
+  policy_file: configs/relation_policy.yaml
