@@ -6,6 +6,10 @@
 
 ---
 
+## Implementation status
+
+The geospatial foundation now includes scene inspection, COG preparation, source-linked patch extraction, local STAC bundles, and a transactional PostGIS adapter. See [the ingestion operator guide](docs/INGESTION.md) for commands, tests, and remaining gate prerequisites. The semantic retrieval and temporal intelligence described below remain planned capabilities.
+
 ## 1. What Tessera-X Is
 
 Tessera-X is an offline Earth-observation intelligence system for analysts who need to search and investigate large satellite-image archives without depending on cloud APIs.
